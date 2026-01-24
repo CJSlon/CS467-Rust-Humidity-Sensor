@@ -1,0 +1,9 @@
+[package]
+name = "cs467"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[target.thumbv6m-none-eabi]
+runner = "elf2uf2-rs -d"
