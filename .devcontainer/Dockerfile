@@ -26,3 +26,6 @@ RUN apt-get update && apt-get install -y \
 RUN cargo install elf2uf2-rs --root /usr/local \
     && rm -rf /usr/local/cargo/registry \
     && rm -rf /usr/local/cargo/git
+
+# Need to install the RPi target library too
+RUN rustup target add thumbv6m-none-eabi
