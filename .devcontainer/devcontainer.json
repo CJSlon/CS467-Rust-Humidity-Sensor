@@ -1,0 +1,44 @@
+// This dev container specification allows all project members to
+// develop in the same exact Linux environment, no matter their
+// host OS. It first runs the Dockerfile to install Linux and 
+// system dependencies. Within the Linux container it then installs
+// useful VSCode extensions, configures ZSH with nice add-ons, and 
+// finally calls a setup shell script that installs RPi tools
+// per a setup guide
+{
+  "name": "Rust Pico Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "fill-labs.dependi",
+        "usernamehw.errorlens",
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools"
+      ]
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:latest": {
+      "username": "vscode",
+      "configureZshAsDefaultShell": true,
+      "installZsh": true,
+      "installOhMyZsh": true
+    },
+    "ghcr.io/devcontainers-extra/features/zsh-plugins:0": {
+      "plugins": "git zsh-autosuggestions zsh-syntax-highlighting",
+      "omzPlugins": "https://github.com/zsh-users/zsh-autosuggestions https://github.com/zsh-users/zsh-syntax-highlighting"
+    }
+  },
+  "containerEnv": {
+    "PICO_SDK_PATH": "${containerWorkspaceFolder}/pico-sdk"
+  },
+  "postCreateCommand": "zsh .devcontainer/post-create.sh",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true
+}
