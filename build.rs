@@ -1,6 +1,6 @@
 //! Based on build.rs found in "Embassy Getting Started Guide"
 //! https://github.com/embassy-rs/embassy
-//! 
+//!
 //! This build script copies the `memory.x` file from the crate root into
 //! a directory where the linker can always find it at build time.
 
