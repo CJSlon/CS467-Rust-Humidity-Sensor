@@ -5,8 +5,6 @@
 
 use panic_halt as _;
 
-use core::fmt::Write;
-
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
@@ -19,10 +17,8 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
-use heapless::String;
 
 const DHT20_ADDR: u8 = 0x38;
-const LCD_ADDR: u8 = 0x27;
 const SENSOR_TRIGGER_CMD: [u8; 3] = [0xAC, 0x33, 0x00];
 const SENSOR_READ_WAIT_MS: u64 = 80;
 
@@ -30,81 +26,13 @@ bind_interrupts!(struct Irqs {
     I2C0_IRQ => InterruptHandler<I2C0>;
 });
 
-// Minimal async LCD driver for PCF8574 I2C backpack
-struct SimpleLcd<'a, I: AsyncI2c> {
-    i2c: I2cDevice<'a, NoopRawMutex, I>,
-    addr: u8,
-    backlight: u8,
-}
-
-impl<'a, I: AsyncI2c> SimpleLcd<'a, I> {
-    fn new(i2c: I2cDevice<'a, NoopRawMutex, I>, addr: u8) -> Self {
-        Self {
-            i2c,
-            addr,
-            backlight: 0x08,
-        }
-    }
-
-    async fn write_nibble(&mut self, data: u8) {
-        let _ = self.i2c.write(self.addr, &[data | self.backlight]).await;
-        Timer::after_micros(1).await;
-        let _ = self
-            .i2c
-            .write(self.addr, &[data | 0x04 | self.backlight])
-            .await;
-        Timer::after_micros(1).await;
-        let _ = self.i2c.write(self.addr, &[data | self.backlight]).await;
-        Timer::after_micros(50).await;
-    }
-
-    async fn send(&mut self, data: u8, mode: u8) {
-        let high = (data & 0xF0) | mode;
-        let low = ((data << 4) & 0xF0) | mode;
-        self.write_nibble(high).await;
-        self.write_nibble(low).await;
-    }
-
-    async fn init(&mut self) {
-        Timer::after_millis(50).await;
-        self.write_nibble(0x30).await;
-        Timer::after_millis(5).await;
-        self.write_nibble(0x30).await;
-        Timer::after_micros(100).await;
-        self.write_nibble(0x30).await;
-        self.write_nibble(0x20).await;
-
-        self.send(0x28, 0).await; // 4-bit, 2 line
-        self.send(0x0C, 0).await; // Display on
-        self.send(0x06, 0).await; // Entry mode
-        self.send(0x01, 0).await; // Clear
-        Timer::after_millis(2).await;
-    }
-
-    async fn clear(&mut self) {
-        self.send(0x01, 0).await;
-        Timer::after_millis(2).await;
-    }
-
-    async fn set_cursor(&mut self, row: u8, col: u8) {
-        let pos = if row == 0 { 0x80 | col } else { 0xC0 | col };
-        self.send(pos, 0).await;
-    }
-
-    async fn print(&mut self, text: &str) {
-        for byte in text.bytes() {
-            self.send(byte, 0x01).await;
-        }
-    }
-}
-
-fn pad_line(line: &mut String<16>) {
-    while line.len() < 16 {
-        let _ = line.push(' ');
-    }
-}
-
 async fn blink_led(mut led: Output<'static>) {
+    //! Function to blink onboard LED to signal successful boot
+    //! Args:
+    //!    led: Mutable Output pin (owned)
+    //! Returns:
+    //!    None
+
     for _ in 0..10 {
         led.set_high();
         Timer::after_millis(100).await;
@@ -134,6 +62,21 @@ async fn dim_led(led: &mut Output<'_>) {
     led.set_low();
 }
 
+async fn blink_error_led(led: &mut Output<'_>) {
+    //! Function to continuously blink an LED to signal an error state
+    //! Args:
+    //!    led: Mutable reference to an Output pin
+    //!Returns:
+    //!    None
+
+    loop {
+        illuminate_led(led).await;
+        Timer::after_millis(500).await;
+        dim_led(led).await;
+        Timer::after_millis(500).await;
+    }
+}
+
 async fn boot_led_sequence(leds: &mut [Output<'_>]) {
     //! Function to run boot sequence on all LEDs to ack startup/function
     //! Args:
@@ -156,10 +99,16 @@ async fn boot_led_sequence(leds: &mut [Output<'_>]) {
 }
 
 async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, bool, [u8; 6]) {
-    let mut busy = true;
-    let mut read_err = false;
-    let mut write_err = false;
-    let mut data = [0u8; 6];
+    //! Function to trigger and read raw data from the DHT20 sensor over I2C
+    //! Args:
+    //!    dht_i2c: Mutable reference to an async I2C device
+    //! Returns:
+    //!    Tuple of (busy, read_err, write_err, data)
+
+    let mut busy = true; // Sensor is still processing measurement
+    let mut read_err = false; // Error flag for I2C read
+    let mut write_err = false; // Error flag for I2C write
+    let mut data = [0u8; 6]; // Buffer to hold raw sensor data
 
     if dht_i2c.write(DHT20_ADDR, &SENSOR_TRIGGER_CMD).await.is_ok() {
         Timer::after_millis(SENSOR_READ_WAIT_MS).await;
@@ -185,16 +134,17 @@ async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, 
     (busy, read_err, write_err, data)
 }
 
-fn process_sensor_data(data: [u8; 6]) -> (f32, f32) {
+fn process_sensor_data(data: [u8; 6]) -> f32 {
+    //! Function to convert raw DHT20 sensor bytes into a relative humidity percentage
+    //! Args:
+    //!    data: Array of 6 raw bytes from the sensor
+    //! Returns:
+    //!    Humidity as a f32 percentage
+
     let raw_humidity: u32 =
         ((data[1] as u32) << 12) | ((data[2] as u32) << 4) | ((data[3] as u32) >> 4);
-    let raw_temp: u32 =
-        (((data[3] as u32) & 0x0F) << 16) | ((data[4] as u32) << 8) | (data[5] as u32);
-
     let humidity = (raw_humidity as f32) * 100.0 / 1048576.0;
-    let temperature = (raw_temp as f32) * 200.0 / 1048576.0 - 50.0;
-
-    (humidity, temperature)
+    humidity
 }
 
 #[embassy_executor::main]
@@ -222,33 +172,29 @@ async fn main(_spawner: Spawner) {
     let i2c_bus: Mutex<NoopRawMutex, _> = Mutex::new(i2c);
 
     let mut dht_i2c = I2cDevice::new(&i2c_bus);
-    let lcd_i2c = I2cDevice::new(&i2c_bus);
 
-    let mut lcd = SimpleLcd::new(lcd_i2c, LCD_ADDR);
-    lcd.init().await;
-    lcd.print("DHT20 init...").await;
+    boot_led_sequence(&mut leds).await;
 
     // Main loop
     loop {
-        boot_led_sequence(&mut leds).await;
-        let mut line2: String<16> = String::new();
-
         let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht_i2c).await;
 
         if write_err {
-            let _ = write!(&mut line2, "DHT20 No Ack");
+            blink_error_led(&mut leds[0]).await;
         } else if read_err {
-            let _ = write!(&mut line2, "DHT20 I2C Err");
+            blink_error_led(&mut leds[1]).await;
         } else if busy {
-            let _ = write!(&mut line2, "DHT20 Busy");
+            blink_error_led(&mut leds[2]).await;
         } else {
-            let (humidity, temperature) = process_sensor_data(data);
-            let _ = write!(&mut line2, "H:{:>5.1}% T:{:>5.1}", humidity, temperature);
+            let humidity = process_sensor_data(data);
+            if humidity < 30.0 {
+                illuminate_led(&mut leds[3]).await;
+            } else if humidity < 60.0 {
+                illuminate_led(&mut leds[4]).await;
+            } else {
+                illuminate_led(&mut leds[5]).await;
+            }
         }
-
-        pad_line(&mut line2);
-        lcd.set_cursor(1, 0).await;
-        lcd.print(&line2).await;
 
         Timer::after_millis(1000).await;
     }
