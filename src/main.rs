@@ -3,7 +3,6 @@
 
 use panic_halt as _;
 
-use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::{
@@ -11,8 +10,6 @@ use embassy_rp::{
     i2c::{self, Config as I2cConfig, InterruptHandler},
     peripherals::I2C0,
 };
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
@@ -168,10 +165,7 @@ async fn main(_spawner: Spawner) {
     let mut i2c_config = I2cConfig::default();
     i2c_config.frequency = 100_000;
 
-    let i2c = i2c::I2c::new_async(p.I2C0, p.PIN_17, p.PIN_16, Irqs, i2c_config);
-    let i2c_bus: Mutex<NoopRawMutex, _> = Mutex::new(i2c);
-
-    let mut dht_i2c = I2cDevice::new(&i2c_bus);
+    let mut dht_i2c = i2c::I2c::new_async(p.I2C0, p.PIN_17, p.PIN_16, Irqs, i2c_config);
 
     // Main loop
     loop {
