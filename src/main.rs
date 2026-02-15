@@ -1,5 +1,3 @@
-// DHT20 with minimal async LCD support
-
 #![no_std]
 #![no_main]
 
@@ -113,9 +111,11 @@ async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, 
     if dht_i2c.write(DHT20_ADDR, &SENSOR_TRIGGER_CMD).await.is_ok() {
         Timer::after_millis(SENSOR_READ_WAIT_MS).await;
 
+        // Make multiple read attempts in case sensor is still busy, but break early if we get a successful read
         for _ in 0..10 {
             match dht_i2c.read(DHT20_ADDR, &mut data).await {
                 Ok(()) => {
+                    // 0 in the MSB of the first byte indicates measurement is ready
                     if (data[0] & 0x80) == 0 {
                         busy = false;
                         break;
@@ -173,10 +173,9 @@ async fn main(_spawner: Spawner) {
 
     let mut dht_i2c = I2cDevice::new(&i2c_bus);
 
-    boot_led_sequence(&mut leds).await;
-
     // Main loop
     loop {
+        boot_led_sequence(&mut leds).await;
         let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht_i2c).await;
 
         if write_err {
