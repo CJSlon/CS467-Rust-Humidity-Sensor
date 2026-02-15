@@ -114,6 +114,47 @@ async fn blink_led(mut led: Output<'static>) {
     led.set_high();
 }
 
+async fn illuminate_led(led: &mut Output<'_>) {
+    //! Function to turn on LED pin
+    //! Args:
+    //!    led: Mutable reference to an Output pin
+    //!Returns:
+    //!    None
+
+    led.set_high();
+}
+
+async fn dim_led(led: &mut Output<'_>) {
+    //! Function to turn off LED pin
+    //! Args:
+    //!    led: Mutable reference to an Output pin
+    //!Returns:
+    //!    None
+
+    led.set_low();
+}
+
+async fn boot_led_sequence(leds: &mut [Output<'_>]) {
+    //! Function to run boot sequence on all LEDs to ack startup/function
+    //! Args:
+    //!   leds: Mutable ref to array of leds
+    //! Returns:
+    //!  None
+
+    // Cycle LEDs forward and backwards
+    for i in 0..leds.len() {
+        illuminate_led(&mut leds[i]).await;
+        Timer::after_millis(100).await;
+        dim_led(&mut leds[i]).await;
+    }
+
+    for i in (0..leds.len()).rev() {
+        illuminate_led(&mut leds[i]).await;
+        Timer::after_millis(100).await;
+        dim_led(&mut leds[i]).await;
+    }
+}
+
 async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, bool, [u8; 6]) {
     let mut busy = true;
     let mut read_err = false;
@@ -160,6 +201,16 @@ fn process_sensor_data(data: [u8; 6]) -> (f32, f32) {
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
+    // Array of LED pin objects
+    let mut leds = [
+        Output::new(p.PIN_15, Level::Low), // Very low RH LED
+        Output::new(p.PIN_14, Level::Low),
+        Output::new(p.PIN_13, Level::Low),
+        Output::new(p.PIN_12, Level::Low),
+        Output::new(p.PIN_11, Level::Low),
+        Output::new(p.PIN_10, Level::Low), // Very high RH LED
+    ];
+
     let led = Output::new(p.PIN_25, Level::Low);
     blink_led(led).await;
 
@@ -179,6 +230,7 @@ async fn main(_spawner: Spawner) {
 
     // Main loop
     loop {
+        boot_led_sequence(&mut leds).await;
         let mut line2: String<16> = String::new();
 
         let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht_i2c).await;
