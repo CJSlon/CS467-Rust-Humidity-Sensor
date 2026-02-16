@@ -158,6 +158,7 @@ async fn main(_spawner: Spawner) {
         Output::new(p.PIN_10, Level::Low), // Very high RH LED
     ];
 
+    // testing onboard LED on pin 25 to verify async functionality before setting up I2C
     let led = Output::new(p.PIN_25, Level::Low);
     blink_led(led).await;
 
