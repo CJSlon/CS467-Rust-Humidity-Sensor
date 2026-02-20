@@ -131,6 +131,9 @@ async fn get_humidity_sensor_data<I: AsyncI2c>(
     //! Function to trigger and read raw data from the DHT20 sensor over I2C
     //! Args:
     //!    dht_i2c: Mutable reference to an async I2C device
+    //!    dht20_address: u8 : I2C address of the sensor
+    //!    sensor_trigger_cmd: [u8; 3] : Command bytes to trigger a measurement
+    //!    sensor_read_wait_ms: u64 : Delay in ms before reading data after triggering
     //! Returns:
     //!    Tuple of (busy, read_err, write_err, data)
 
