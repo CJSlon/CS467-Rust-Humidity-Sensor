@@ -4,44 +4,21 @@
 use panic_halt as _;
 
 use embassy_executor::Spawner;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::{
-    bind_interrupts,
-    i2c::{self, Config as I2cConfig, InterruptHandler},
-    peripherals::I2C0,
-};
+use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::{Level, Output}; //import GPIO driver
+use embassy_rp::i2c::{AbortReason, Async, Config, I2c, InterruptHandler}; // import I2C driver
+use embassy_rp::peripherals::I2C0;
 use embassy_time::Timer;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
-const DHT20_ADDR: u8 = 0x38;
-const SENSOR_TRIGGER_CMD: [u8; 3] = [0xAC, 0x33, 0x00];
-const SENSOR_READ_WAIT_MS: u64 = 80;
-
-bind_interrupts!(struct Irqs {
-    I2C0_IRQ => InterruptHandler<I2C0>;
-});
-
-async fn blink_led(mut led: Output<'static>) {
-    //! Function to blink onboard LED to signal successful boot
-    //! Args:
-    //!    led: Mutable Output pin (owned)
-    //! Returns:
-    //!    None
-
-    for _ in 0..10 {
-        led.set_high();
-        Timer::after_millis(100).await;
-        led.set_low();
-        Timer::after_millis(100).await;
-    }
-    led.set_high();
-}
+// bind I2C0 interrupt to I2C driver
+bind_interrupts!(struct Interrupts { I2C0_IRQ => InterruptHandler<I2C0>; });
 
 async fn illuminate_led(led: &mut Output<'_>) {
     //! Function to turn on LED pin
     //! Args:
     //!    led: Mutable reference to an Output pin
-    //!Returns:
+    //! Returns:
     //!    None
 
     led.set_high();
@@ -80,20 +57,77 @@ async fn boot_led_sequence(leds: &mut [Output<'_>]) {
     //!  None
 
     // Cycle LEDs forward and backwards
-    for i in 0..leds.len() {
+    for i in 0..leds.len() - 1 {
         illuminate_led(&mut leds[i]).await;
         Timer::after_millis(100).await;
         dim_led(&mut leds[i]).await;
     }
 
-    for i in (0..leds.len()).rev() {
+    for i in (0..leds.len() - 1).rev() {
         illuminate_led(&mut leds[i]).await;
         Timer::after_millis(100).await;
         dim_led(&mut leds[i]).await;
     }
 }
 
-async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, bool, [u8; 6]) {
+async fn boot_error_led_sequence(leds: &mut [Output<'_>]) {
+    //! function to display an error sequence on LEDs (three quick flashes)
+    //! Args:
+    //!     leds: Mutable ref to array of leds
+    //! Returns:
+    //!     None
+
+    for _ in 0..3 {
+        for i in 0..leds.len() {
+            illuminate_led(&mut leds[i]).await;
+        }
+        Timer::after_millis(100).await;
+        for i in 0..leds.len() {
+            dim_led(&mut leds[i]).await;
+        }
+        Timer::after_millis(100).await;
+        Timer::after_millis(100).await;
+    }
+}
+
+async fn dht20_init(
+    dht20_i2c: &mut I2c<'static, I2C0, Async>,
+    dht20_address: u8,
+    dht20_status: u8,
+) -> Result<(), embassy_rp::i2c::Error> {
+    //! Function to initialize DHT2 sensor
+    //! ARGS:
+    //!    dht20_i2c : mutable ref to I2C object for the DHT20 sensor with object parameters:
+    //!         'static : lifetime specifier
+    //!         I2C0 : peripheral instance--change based on pin and which I2C is used
+    //!         Async : Async mode for I2C communications (Change to blocking if needed)
+    //!    dht20_address : u8 : I2C address of the sensor
+    //!    dht20_status : u8 : status register address of sensor     
+    //! Returns:
+    //!    Result: okay : if sensor is init correctly
+    //!    Result: Error : if I2C transmission fails or status bits are incorrect
+
+    let mut status_buffer = [0x00]; // buffer to hold status word rad from sensor
+    Timer::after_millis(500).await; // warmup delay based on DHT20 data sheet
+
+    dht20_i2c
+        .write_read_async(dht20_address, [dht20_status], &mut status_buffer)
+        .await?;
+
+    // bitwise AND to check for correct status bits
+    if status_buffer[0] & 0x18 == 0x18 {
+        Ok(())
+    } else {
+        Err(embassy_rp::i2c::Error::Abort(AbortReason::Other(0)))
+    }
+}
+
+async fn get_humidity_sensor_data<I: AsyncI2c>(
+    dht_i2c: &mut I,
+    dht20_address: u8,
+    sensor_trigger_cmd: [u8; 3],
+    sensor_read_wait_ms: u64,
+) -> (bool, bool, bool, [u8; 6]) {
     //! Function to trigger and read raw data from the DHT20 sensor over I2C
     //! Args:
     //!    dht_i2c: Mutable reference to an async I2C device
@@ -105,12 +139,16 @@ async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, 
     let mut write_err = false; // Error flag for I2C write
     let mut data = [0u8; 6]; // Buffer to hold raw sensor data
 
-    if dht_i2c.write(DHT20_ADDR, &SENSOR_TRIGGER_CMD).await.is_ok() {
-        Timer::after_millis(SENSOR_READ_WAIT_MS).await;
+    if dht_i2c
+        .write(dht20_address, &sensor_trigger_cmd)
+        .await
+        .is_ok()
+    {
+        Timer::after_millis(sensor_read_wait_ms).await;
 
         // Make multiple read attempts in case sensor is still busy, but break early if we get a successful read
         for _ in 0..10 {
-            match dht_i2c.read(DHT20_ADDR, &mut data).await {
+            match dht_i2c.read(dht20_address, &mut data).await {
                 Ok(()) => {
                     // 0 in the MSB of the first byte indicates measurement is ready
                     if (data[0] & 0x80) == 0 {
@@ -131,6 +169,7 @@ async fn get_humidity_sensor_data<I: AsyncI2c>(dht_i2c: &mut I) -> (bool, bool, 
     (busy, read_err, write_err, data)
 }
 
+// PLACEHOLDER for testing on my end
 fn process_sensor_data(data: [u8; 6]) -> f32 {
     //! Function to convert raw DHT20 sensor bytes into a relative humidity percentage
     //! Args:
@@ -156,23 +195,49 @@ async fn main(_spawner: Spawner) {
         Output::new(p.PIN_12, Level::Low),
         Output::new(p.PIN_11, Level::Low),
         Output::new(p.PIN_10, Level::Low), // Very high RH LED
+        Output::new(p.PIN_25, Level::Low), // Onboard LED
     ];
 
-    // testing onboard LED on pin 25 to verify async functionality before setting up I2C
-    let led = Output::new(p.PIN_25, Level::Low);
-    blink_led(led).await;
+    // I2C object for sensor
+    let mut config = Config::default();
+    config.frequency = 100_000; // Set I2C clock frequency to 100kHz (standard mode for DHT20)
+    let mut dht20_i2c = I2c::new_async(p.I2C0, p.PIN_21, p.PIN_20, Interrupts, config);
 
-    // Set up async I2C bus
-    let mut i2c_config = I2cConfig::default();
-    i2c_config.frequency = 100_000;
+    // dht20 register addresses and commands
+    const DHT20_ADDRESS: u8 = 0x38; // I2C Address for DHT20 per data sheet
+    const DHT20_STATUS: u8 = 0x71; // status register address for DHT20 per data sheet
+    const SENSOR_TRIGGER_CMD: [u8; 3] = [0xAC, 0x33, 0x00]; // Command to trigger measurement on DHT20 per data sheet
+    const SENSOR_READ_WAIT_MS: u64 = 80; // Wait time in ms before attempting to read data after triggering measurement, based on DHT20 data sheet
 
-    let mut dht_i2c = i2c::I2c::new_async(p.I2C0, p.PIN_17, p.PIN_16, Irqs, i2c_config);
+    // Initialize DHT20 sensor and run boot/error sequence based on result
+    match dht20_init(&mut dht20_i2c, DHT20_ADDRESS, DHT20_STATUS).await {
+        Ok(()) => {
+            // Initialization is successful run boot sequence on LEDs
+            loop {
+                // when integrating with read logic run boot seq once and then break to main logic
+                boot_led_sequence(&mut leds).await;
+                break;
+            }
+        }
+        Err(_e) => {
+            // If init fails run error pattern on LEDs
+            loop {
+                boot_error_led_sequence(&mut leds).await;
+            }
+        }
+    }
 
-    // Main loop
+    // Main loop to read sensor data and update LEDs based on humidity level and error states
     loop {
-        boot_led_sequence(&mut leds).await;
-        let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht_i2c).await;
+        let (busy, read_err, write_err, data) = get_humidity_sensor_data(
+            &mut dht20_i2c,
+            DHT20_ADDRESS,
+            SENSOR_TRIGGER_CMD,
+            SENSOR_READ_WAIT_MS,
+        )
+        .await;
 
+        // PLACEHOLDER for testing on my end
         if write_err {
             blink_error_led(&mut leds[0]).await;
         } else if read_err {
