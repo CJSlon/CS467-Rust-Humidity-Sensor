@@ -46,4 +46,28 @@ The Dev Container spec is configured to install Debian Linux (v12) and Rust from
 
 Once running, the Dev Container can be treated as a full Linux machine, barring I/O device connections. If the host machine is also running Linux, mapping the USB COM port of the Pico to a USB port in the container is straightforward. This enables for the build chain to work end-to-end using `picotool`. If the host is MacOS or Windows, it's up to the developer to decide how to proceed. Pico flashing is as simple as dragging and dropping a `.uf2` into the Pico's root directory via File Exporer or Finder, so choosing to bypass `picotool` will not significantly affect the development experience. Additionally, if the Pico is not able to communicate with the container directly via USB, serial monitoring is still possible from a separate process on the host. VSCode also makes this easy with the official *Serial Monitor* extension.
 
-While containerized development has many benefits, it is *not* required for development on this project. The only requirement is for each developer to be able to produce a valid `.uf2`, one way or another.  
+While containerized development has many benefits, it is *not* required for development on this project. The only requirement is for each developer to be able to produce a valid `.uf2`, one way or another.
+
+#### Sensor LED Patterns
+
+The humidity sensor using LED sequences to indicate various status to the user.These statuses convey successful boot and various error states the sensor may encounter. The sensor immedialty attempts to initialize upon being pluged in and will render a humidity reading or error after indicateing a sucessful boot. The LED patterns and corrisponding meanings are outlined below:
+
+| Pattern Discription                                       | Pattern Meaning                                     |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| Series of illumnination bounding back and forth two times | Successful boot and initialization of the sensor    | 
+| Series of three rapid repeated flashes of all LEDs        | Boot failure and unsucessful sensor initialization  |
+| Single flashing **red** LED                               | Error requesting humidity read from sensor          |
+| Single flashing **yellow** LED                            | Error recieving humidity read from sensor           |
+| Single flashing **green** LED                             | Sensor is busy with existing request                |
+
+Upon a successfuly sensor read the sensor will illuminate all LEDs up to and including the LED for the bracked ranges outlined below
+
+| LED Number  | LED Color | RH%       | Description         |
+| :---------: | --------- | :---:     | -----------         |
+| 1           | Red       |  < 20%    | Critically Dry      |
+| 2           | Yellow    | 20 - 40%  | Dry                 |
+| 3           | Green     | 40 - 50%  | Comfortable         |
+| 4           | Green     | 50 - 60%  | Comfortable         |
+| 5           | Yellow    | 60 - 70%  | Humid               |
+| 6           | Red       | >70%      | Critically Humid    |
+
