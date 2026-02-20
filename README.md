@@ -53,7 +53,7 @@ While containerized development has many benefits, it is *not* required for deve
 The humidity sensor using LED sequences to indicate various status to the user.These statuses convey successful boot and various error states the sensor may encounter. The sensor immedialty attempts to initialize upon being pluged in and will render a humidity reading or error after indicateing a sucessful boot. The LED patterns and corrisponding meanings are outlined below:
 
 | Pattern Discription                                       | Pattern Meaning                                     |
-| --------------------------------------------------------- | --------------------------------------------------- |
+| :-------------------------------------------------------- | :-------------------------------------------------- |
 | Series of illumnination bounding back and forth two times | Successful boot and initialization of the sensor    | 
 | Series of three rapid repeated flashes of all LEDs        | Boot failure and unsucessful sensor initialization  |
 | Single flashing **red** LED                               | Error requesting humidity read from sensor          |
@@ -63,7 +63,7 @@ The humidity sensor using LED sequences to indicate various status to the user.T
 Upon a successfuly sensor read the sensor will illuminate all LEDs up to and including the LED for the bracked ranges outlined below
 
 | LED Number  | LED Color | RH%       | Description         |
-| :---------: | --------- | :---:     | -----------         |
+| :---------  | :-------- | :----     | -----------         |
 | 1           | Red       |  < 20%    | Critically Dry      |
 | 2           | Yellow    | 20 - 40%  | Dry                 |
 | 3           | Green     | 40 - 50%  | Comfortable         |
