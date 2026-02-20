@@ -18,7 +18,7 @@ const DHT20_ADDRESS: u8 = 0x38; // I2C Address for DHT20 per data sheet
 const SENSOR_TRIGGER_CMD: [u8; 3] = [0xAC, 0x33, 0x00];
 const SENSOR_READ_WAIT_MS: u64 = 80;
 const DHT20_STATUS: u8 = 0x71; // status register address for DHT20 per data sheet
-
+const IIR_ALPHA: f32 = 0.25; // the IIR filter value parameter
 
 bind_interrupts!(struct Irqs { I2C0_IRQ => InterruptHandler<I2C0>; });
 
@@ -189,6 +189,32 @@ fn process_sensor_data(data: [u8; 6]) -> f32 {
     humidity
 }
 
+fn filter_iir(value: f32, prev_filter_value: f32, alpha: f32) -> f32 {
+    //! Function to retrieve the next IIR-filtered signal value
+    //! Args:
+    //!    value: the current signal value 
+    //!    prev_filter_value: the last computed filter value 
+    //!           (use the current value as the previous value for the first measurement)
+    //!    alpha: the IIR filter constant (filtered value = (1 - alpha) * prev filterd value + alpha * value )
+    //! Returns:
+    //!    An updated filtered signal value
+
+    (1.0 - alpha) * prev_filter_value + alpha * value
+}
+
+fn render_(value: f32, prev_filter_value: f32, alpha: f32) -> f32 {
+    //! Function to retrieve the next IIR-filtered signal value
+    //! Args:
+    //!    value: the current signal value 
+    //!    prev_filter_value: the last computed filter value 
+    //!           (use the current value as the previous value for the first measurement)
+    //!    alpha: the IIR filter constant (filtered value = (1 - alpha) * prev filterd value + alpha * value )
+    //! Returns:
+    //!    An updated filtered signal value
+
+    (1.0 - alpha) * prev_filter_value + alpha * value
+}
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -227,16 +253,24 @@ async fn main(_spawner: Spawner) {
                 } else if busy {
                     blink_error_led(&mut leds[2]).await;
                 } else {
-                    let humidity = process_sensor_data(data);
-                if humidity < 30.0 {
-                    illuminate_led(&mut leds[3]).await;
-                } else if humidity < 60.0 {
-                    illuminate_led(&mut leds[4]).await;
-                } else {
-                    illuminate_led(&mut leds[5]).await;
-                }}
+                    // Initialize the IIR filter with the first measurement
+                    let mut humidity = process_sensor_data(data);
+                    let mut prev_filtered_humidity = humidity;
 
-            Timer::after_millis(1000).await;
+                    // Main operation loop
+                    // Read the humidity, filter it, and render the LED output
+                    loop {
+                        // Get the current humidity and filter it
+                        humidity = process_sensor_data(data);
+                        let filtered_humidity = filter_iir(humidity, prev_filtered_humidity, IIR_ALPHA);
+                        prev_filtered_humidity = filtered_humidity;
+
+                        illuminate_led(&mut leds[3]).await;
+                        Timer::after_millis(1000).await;
+                        dim_led(&mut leds[3]).await;
+                        Timer::after_millis(1000).await;
+                    }
+                }
             }
         }
         Err(_e) => {
