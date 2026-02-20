@@ -50,24 +50,24 @@ While containerized development has many benefits, it is *not* required for deve
 
 #### Sensor LED Patterns
 
-The humidity sensor using LED sequences to indicate various status to the user.These statuses convey successful boot and various error states the sensor may encounter. The sensor immedialty attempts to initialize upon being pluged in and will render a humidity reading or error after indicateing a sucessful boot. The LED patterns and corrisponding meanings are outlined below:
+The humidity sensor using LED sequences to indicate various status to the user. These statuses convey successful boot and various error states the sensor may encounter. The sensor immediately attempts to initialize upon being plugged in and will render a humidity reading or error after indicating a successful boot. The LED patterns and corresponding meanings are outlined below:
 
-| Pattern Discription                                       | Pattern Meaning                                     |
+| Pattern Description | Pattern Meaning |
 | :-------------------------------------------------------- | :-------------------------------------------------- |
-| Series of illumnination bounding back and forth two times | Successful boot and initialization of the sensor    | 
-| Series of three rapid repeated flashes of all LEDs        | Boot failure and unsucessful sensor initialization  |
-| Single flashing **red** LED                               | Error requesting humidity read from sensor          |
-| Single flashing **yellow** LED                            | Error recieving humidity read from sensor           |
-| Single flashing **green** LED                             | Sensor is busy with existing request                |
+| Series of illumination bounding back and forth two times | Successful boot and initialization of the sensor | 
+| Series of three rapid repeated flashes of all LEDs | Boot failure and unsuccessful sensor initialization |
+| Single flashing **red** LED | Error requesting humidity read from sensor |
+| Single flashing **yellow** LED | Error receiving humidity read from sensor |
+| Single flashing **green** LED | Sensor is busy with existing request |
 
-Upon a successfuly sensor read the sensor will illuminate all LEDs up to and including the LED for the bracked ranges outlined below
+Upon a successful sensor read the sensor will illuminate all LEDs up to and including the LED for the bracketed ranges outlined below:
 
-| LED Number  | LED Color | RH%       | Description         |
-| :---------  | :-------- | :----     | -----------         |
-| 1           | Red       |  < 20%    | Critically Dry      |
-| 2           | Yellow    | 20 - 40%  | Dry                 |
-| 3           | Green     | 40 - 50%  | Comfortable         |
-| 4           | Green     | 50 - 60%  | Comfortable         |
-| 5           | Yellow    | 60 - 70%  | Humid               |
-| 6           | Red       | >70%      | Critically Humid    |
+| LED Number | LED Color | RH% | Description |
+| :--------- | :-------- | :---- | ----------- |
+| 1 | Red | < 20% | Critically Dry |
+| 2 | Yellow | 20 - 40% | Dry |
+| 3 | Green | 40 - 50% | Comfortable |
+| 4 | Green | 50 - 60% | Comfortable |
+| 5 | Yellow | 60 - 70% | Humid |
+| 6 | Red | >70% | Critically Humid |
 
