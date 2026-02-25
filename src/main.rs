@@ -226,12 +226,12 @@ async fn main(_spawner: Spawner) {
 
     // Array of LED pin objects
     let mut leds = [
-        Output::new(p.PIN_10, Level::Low), // Very low RH LED
-        Output::new(p.PIN_11, Level::Low),
-        Output::new(p.PIN_12, Level::Low),
-        Output::new(p.PIN_13, Level::Low),
+        Output::new(p.PIN_15, Level::Low), // Very low RH LED
         Output::new(p.PIN_14, Level::Low),
-        Output::new(p.PIN_15, Level::Low), // Very high RH LED
+        Output::new(p.PIN_13, Level::Low),
+        Output::new(p.PIN_12, Level::Low),
+        Output::new(p.PIN_11, Level::Low),
+        Output::new(p.PIN_10, Level::Low), // Very high RH LED
         Output::new(p.PIN_25, Level::Low), // Onboard LED
     ];
 
@@ -264,14 +264,14 @@ async fn main(_spawner: Spawner) {
 
                     // Main operation loop
                     // Read the humidity, filter it, and render the LED output
-                    loop {
+                
                         // Get the current humidity and filter it
                         humidity = process_sensor_data(data);
                         let filtered_humidity = filter_iir(humidity, prev_filtered_humidity, IIR_ALPHA);
                         prev_filtered_humidity = filtered_humidity;
 
                         // Indicate a new measurement was processed (for debuging)
-                        boot_led_sequence(&mut leds).await;
+                        //boot_led_sequence(&mut leds).await;
 
                         // Render the LED pattern from the filtered humidity measurement
                         let pattern = render_pattern(filtered_humidity, PATTERN_RENDER_THRESHOLDS);
@@ -286,7 +286,7 @@ async fn main(_spawner: Spawner) {
 
                         // Wait before taking the next measurement
                         Timer::after_millis(2000).await;
-                    }
+                    
                 }
             }
         }
