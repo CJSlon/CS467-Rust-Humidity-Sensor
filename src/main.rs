@@ -247,8 +247,14 @@ async fn main(_spawner: Spawner) {
         Ok(()) => {
             // Initialization is successful run boot sequence on LEDs
             boot_led_sequence(&mut leds).await;
-            
-            loop { 
+
+            //Set previous filter to 0 for first measurement: outside loop so it persists
+            let mut prev_filtered_humidity = 0.0;
+            let mut first_measurement = true;
+
+            loop {
+                // Main operation loop
+                // Read the humidity, filter it, and render the LED output
                 let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht20_i2c).await;
 
                 if write_err {
@@ -258,34 +264,36 @@ async fn main(_spawner: Spawner) {
                 } else if busy {
                     blink_error_led(&mut leds[2]).await;
                 } else {
-                    // Initialize the IIR filter with the first measurement
+                    
                     let mut humidity = process_sensor_data(data);
-                    let mut prev_filtered_humidity = humidity;
+                    // Get the current humidity and filter it
+                    humidity = process_sensor_data(data);
+                        
+                        
+                    if first_measurement { 
+                        prev_filtered_humidity = humidity;
+                        first_measurement = false;
+                    }
 
-                    // Main operation loop
-                    // Read the humidity, filter it, and render the LED output
-                
-                        // Get the current humidity and filter it
-                        humidity = process_sensor_data(data);
-                        let filtered_humidity = filter_iir(humidity, prev_filtered_humidity, IIR_ALPHA);
-                        prev_filtered_humidity = filtered_humidity;
+                    let filtered_humidity = filter_iir(humidity, prev_filtered_humidity, IIR_ALPHA);
+                    prev_filtered_humidity = filtered_humidity;
 
-                        // Indicate a new measurement was processed (for debuging)
-                        //boot_led_sequence(&mut leds).await;
+                    // Indicate a new measurement was processed (for debuging)
+                    //boot_led_sequence(&mut leds).await;
 
-                        // Render the LED pattern from the filtered humidity measurement
-                        let pattern = render_pattern(filtered_humidity, PATTERN_RENDER_THRESHOLDS);
+                    // Render the LED pattern from the filtered humidity measurement
+                    let pattern = render_pattern(filtered_humidity, PATTERN_RENDER_THRESHOLDS);
 
-                        // Display the rendered pattern
-                        for (i, state) in pattern.iter().enumerate() {
-                            match *state { 
-                                true => illuminate_led(&mut leds[i]).await,
-                                false => dim_led(&mut leds[i]).await,
-                            }
+                    // Display the rendered pattern
+                    for (i, state) in pattern.iter().enumerate() {
+                        match *state { 
+                            true => illuminate_led(&mut leds[i]).await,
+                            false => dim_led(&mut leds[i]).await,
                         }
+                    }
 
                         // Wait before taking the next measurement
-                        Timer::after_millis(2000).await;
+                    Timer::after_millis(2000).await;
                     
                 }
             }
