@@ -74,6 +74,22 @@ async fn blink_error_led(led: &mut Output<'_>) {
     }
 }
 
+async fn read_ack_led(led: &mut Output<'_>) {
+    //! Function blinks LED once to acknowledge a successful sensor read
+    //! Args:
+    //!    led: Mutable reference to an Output pin
+    //! Returns:
+    //!    None
+
+    illuminate_led(led).await;
+    Timer::after_millis(200).await;
+    dim_led(led).await;
+    Timer::after_millis(200).await;
+}
+
+
+
+
 async fn boot_led_sequence(leds: &mut [Output<'_>]) {
     //! Function to run boot sequence on all LEDs to ack startup/function
     //! Args:
@@ -264,6 +280,7 @@ async fn main(_spawner: Spawner) {
                 } else if busy {
                     blink_error_led(&mut leds[2]).await;
                 } else {
+                    read_ack_led(&mut leds[6]).await; // Blink onboard LED to ack successful read
                     
                     let mut humidity = process_sensor_data(data);
                     // Get the current humidity and filter it
