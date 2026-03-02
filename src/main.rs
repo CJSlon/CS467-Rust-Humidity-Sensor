@@ -282,10 +282,8 @@ async fn main(_spawner: Spawner) {
                 } else {
                     read_ack_led(&mut leds[6]).await; // Blink onboard LED to ack successful read
                     
-                    let mut humidity = process_sensor_data(data);
                     // Get the current humidity and filter it
-                    humidity = process_sensor_data(data);
-                        
+                    let humidity = process_sensor_data(data);
                         
                     if first_measurement { 
                         prev_filtered_humidity = humidity;
