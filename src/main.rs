@@ -2,16 +2,18 @@
 #![no_main]
 
 use panic_halt as _;
+use log::{info, error};
 
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output}; //import GPIO driver
 use embassy_rp::{
     bind_interrupts,
-    i2c::{self, Config as I2cConfig, InterruptHandler, AbortReason, Async, I2c},
-    peripherals::I2C0,
+    i2c::{self, Config as I2cConfig, InterruptHandler as i2cInterruptHandler, AbortReason, Async, I2c},
+    peripherals::{I2C0, USB},
+    usb::{Driver, InterruptHandler as usbInterruptHandler}
 };
 
-use embassy_time::Timer;
+use embassy_time::{Timer, Instant};
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
 const DHT20_ADDRESS: u8 = 0x38; // I2C Address for DHT20 per data sheet
@@ -20,8 +22,21 @@ const SENSOR_READ_WAIT_MS: u64 = 80;
 const DHT20_STATUS: u8 = 0x71; // status register address for DHT20 per data sheet
 const IIR_ALPHA: f32 = 0.25; // the IIR filter value parameter
 const PATTERN_RENDER_THRESHOLDS: [f32; 6] = [0.0, 20.0, 40.0, 50.0, 60.0, 70.0];
+const USB_BUFFER_SIZE: usize = 2048; // the buffer size for the USB driver in bytes
 
-bind_interrupts!(struct Irqs { I2C0_IRQ => InterruptHandler<I2C0>; });
+bind_interrupts!(struct Irqs { 
+    // I2C communication with sensor
+    I2C0_IRQ => i2cInterruptHandler<I2C0>; 
+
+    // USB communication with host
+    USBCTRL_IRQ => usbInterruptHandler<USB>;
+});
+
+// USB communication with host
+#[embassy_executor::task]
+async fn usb_task(driver: Driver<'static, USB>) {
+    embassy_usb_logger::run!(USB_BUFFER_SIZE, log::LevelFilter::Info, driver);
+}
 
 async fn blink_led(led: &mut Output<'static>) {
     //! Function to blink onboard LED
@@ -86,9 +101,6 @@ async fn read_ack_led(led: &mut Output<'_>) {
     dim_led(led).await;
     Timer::after_millis(200).await;
 }
-
-
-
 
 async fn boot_led_sequence(leds: &mut [Output<'_>]) {
     //! Function to run boot sequence on all LEDs to ack startup/function
@@ -251,6 +263,13 @@ async fn main(_spawner: Spawner) {
         Output::new(p.PIN_25, Level::Low), // Onboard LED
     ];
 
+    // Set up USB logging driver and task
+    let usb_driver = Driver::new(p.USB, Irqs);
+    _spawner.spawn(usb_task(usb_driver)).unwrap();
+
+    // Wait for the connection to set up
+    Timer::after_millis(10000).await;
+
     // Set up async I2C bus
     let mut i2c_config = I2cConfig::default();
     i2c_config.frequency = 100_000;
@@ -262,6 +281,8 @@ async fn main(_spawner: Spawner) {
     match dht20_init(&mut dht20_i2c, DHT20_ADDRESS, DHT20_STATUS).await {
         Ok(()) => {
             // Initialization is successful run boot sequence on LEDs
+            info!("DHT20 initialized");
+            info!("Elapsed Time (ms), Humidity (%)");
             boot_led_sequence(&mut leds).await;
 
             //Set previous filter to 0 for first measurement: outside loop so it persists
@@ -274,16 +295,20 @@ async fn main(_spawner: Spawner) {
                 let (busy, read_err, write_err, data) = get_humidity_sensor_data(&mut dht20_i2c).await;
 
                 if write_err {
+                    error!("{}, DHT20 WRITE ERROR", Instant::now().as_millis());
                     blink_error_led(&mut leds[0]).await;
                 } else if read_err {
+                    error!("{}, DHT20 READ ERROR", Instant::now().as_millis());
                     blink_error_led(&mut leds[1]).await;
                 } else if busy {
+                    error!("{}, DHT20 WAITING", Instant::now().as_millis());
                     blink_error_led(&mut leds[2]).await;
                 } else {
                     read_ack_led(&mut leds[6]).await; // Blink onboard LED to ack successful read
                     
                     // Get the current humidity and filter it
                     let humidity = process_sensor_data(data);
+                    info!("{}, {:.2}", Instant::now().as_millis(), humidity);
                         
                     if first_measurement { 
                         prev_filtered_humidity = humidity;
@@ -292,6 +317,8 @@ async fn main(_spawner: Spawner) {
 
                     let filtered_humidity = filter_iir(humidity, prev_filtered_humidity, IIR_ALPHA);
                     prev_filtered_humidity = filtered_humidity;
+
+                    // info!("{}: {:.2}", Instant::now().as_millis(), filtered_humidity);
 
                     // Indicate a new measurement was processed (for debuging)
                     //boot_led_sequence(&mut leds).await;
@@ -307,9 +334,8 @@ async fn main(_spawner: Spawner) {
                         }
                     }
 
-                        // Wait before taking the next measurement
+                    // Wait before taking the next measurement
                     Timer::after_millis(2000).await;
-                    
                 }
             }
         }

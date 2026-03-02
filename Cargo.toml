@@ -30,6 +30,10 @@ embassy-sync = "0.7.2"
 embedded-hal = "0.2.7"
 embedded-hal-async = "1.0.0"
 
+# USB communication with the host
+log = "0.4.29"
+embassy-usb-logger = "0.5.1"
+
 # LCD Driver
 #hd44780-driver = "0.4.0"
 #heapless = "0.8"
