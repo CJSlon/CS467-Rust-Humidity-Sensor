@@ -18,7 +18,7 @@ const DHT20_ADDRESS: u8 = 0x38; // I2C Address for DHT20 per data sheet
 const SENSOR_TRIGGER_CMD: [u8; 3] = [0xAC, 0x33, 0x00];
 const SENSOR_READ_WAIT_MS: u64 = 80;
 const DHT20_STATUS: u8 = 0x71; // status register address for DHT20 per data sheet
-const IIR_ALPHA: f32 = 0.25; // the IIR filter value parameter
+const IIR_ALPHA: f32 = 0.1; // the IIR filter value parameter
 const PATTERN_RENDER_THRESHOLDS: [f32; 6] = [0.0, 20.0, 40.0, 50.0, 60.0, 70.0];
 
 bind_interrupts!(struct Irqs { I2C0_IRQ => InterruptHandler<I2C0>; });
